@@ -9,7 +9,8 @@
  */
 
 import { tableToIPC, tableFromIPC, Table, vectorFromArray, type Vector } from 'apache-arrow';
-import type { Handle, DataFormat, TypeDescriptor } from '../types/index.js';
+import type { Handle, TypeDescriptor } from '../types/index.js';
+import { DataFormat } from '../types/index.js';
 import { getObjectStore } from '../core/object-store.js';
 import { getMemoryPool } from '../core/memory-pool.js';
 
