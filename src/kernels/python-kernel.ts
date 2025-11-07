@@ -253,7 +253,8 @@ builtins.display = display
           if (descriptor) {
             const value = await interchange.deserialize(handle, descriptor);
             // Convert JS value to Python using Pyodide's toPy
-            this.pyodide.globals.set(name, this.pyodide.toPy(value));
+            const pyValue = this.pyodide.toPy(value);
+            this.pyodide.globals.set(name, pyValue);
           }
         }
       }
@@ -281,8 +282,8 @@ builtins.display = display
 
       // Convert result to MIME bundle if not None
       if (result !== undefined && result !== null) {
-        // Check if result is a special image dict format
-        const resultJs = result.toJs ? result.toJs() : result;
+        // Convert Python objects to JS - use Object.fromEntries to convert dicts to plain objects
+        const resultJs = result.toJs ? result.toJs({ dict_converter: Object.fromEntries }) : result;
 
         if (resultJs && typeof resultJs === 'object' && resultJs._mime_type && resultJs._base64) {
           // Special format: convert directly to MIME bundle

@@ -82,10 +82,13 @@ export class ObjectStore {
       return data;
     } else if (data instanceof ArrayBuffer) {
       return new Uint8Array(data);
+    } else if (ArrayBuffer.isView(data)) {
+      // Handle any typed array view
+      return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     } else if (typeof data === 'string') {
       return this.textEncoder.encode(data);
     }
-    throw new Error('Unsupported data type');
+    throw new Error(`Unsupported data type: ${typeof data} ${data?.constructor?.name || 'unknown'}`);
   }
 
   /**

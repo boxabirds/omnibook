@@ -279,77 +279,66 @@ export function NotebookView({ config }: NotebookViewProps) {
     notebook.createCell('javascript', `// 🎯 Cross-Language Interoperability Demo
 // Cell 1: Generate Data in JavaScript
 
-// Create sample dataset - temperature readings over time
-const temperatureData = Array.from({length: 50}, (_, i) => ({
-  timestamp: Date.now() + i * 1000,
-  temperature: 20 + Math.sin(i / 5) * 3 + Math.random() * 2,
-  location: \`Sensor_\${i % 3}\`
-}));
+// Create sample dataset - simple numbers for now
+const data = Array.from({length: 10}, (_, i) => i * 2);
 
-console.log(\`✓ Generated \${temperatureData.length} temperature readings\`);
-console.log('Sample:', temperatureData.slice(0, 3));
+console.log('✓ Generated data:', data);
+console.log(\`  Type: Array of \${data.length} numbers\`);
+console.log(\`  Values: [\${data.join(', ')}]\`);
 
-// This data will automatically be available in the next cell!
-// No manual serialization needed - OmniBook handles it.
-temperatureData;`);
+// Return value gets auto-serialized and passed to next cell!
+data;`);
 
-    // Cell 2: Python - Analyze data
-    notebook.createCell('python', `# 🐍 Cell 2: Analyze Data in Python
-# The 'temperatureData' variable is automatically available!
+    // Cell 2: Python - Process with NumPy
+    notebook.createCell('python', `# 🐍 Cell 2: Process in Python
+# Previous cell's output is available as '_'
 
 import numpy as np
 
-# Access data from JavaScript (automatic deserialization)
-print(f"✓ Received {len(temperatureData)} data points from JavaScript")
-print(f"First item: {temperatureData[0]}")
+# Get data from JavaScript (auto-deserialized!)
+data = _
+print(f"✓ Received data from JavaScript: {data}")
+print(f"  Type: {type(data)}")
+print(f"  Length: {len(data)}")
 
-# Extract temperatures into NumPy array
-temps = np.array([reading['temperature'] for reading in temperatureData])
-
-# Compute statistics
-stats = {
-    'mean': float(np.mean(temps)),
-    'std': float(np.std(temps)),
-    'min': float(np.min(temps)),
-    'max': float(np.max(temps))
+# Convert to NumPy and compute stats
+arr = np.array(data)
+result = {
+    'sum': int(np.sum(arr)),
+    'mean': float(np.mean(arr)),
+    'std': float(np.std(arr))
 }
 
-print(f"\\nTemperature Statistics:")
-print(f"  Mean: {stats['mean']:.2f}°C")
-print(f"  Std:  {stats['std']:.2f}°C")
-print(f"  Min:  {stats['min']:.2f}°C")
-print(f"  Max:  {stats['max']:.2f}°C")
+print(f"\\n✓ Computed statistics:")
+print(f"  Sum:  {result['sum']}")
+print(f"  Mean: {result['mean']:.2f}")
+print(f"  Std:  {result['std']:.2f}")
 
-# Return stats (will be available in next cell)
-stats`);
+# Return dict (auto-serialized as JSON)
+result`);
 
-    // Cell 3: Python - Clean and transform
-    notebook.createCell('python', `# 🔬 Cell 3: Data Cleaning in Python
+    // Cell 3: JavaScript - Display results
+    notebook.createCell('javascript', `// 📊 Cell 3: Visualize in JavaScript
+// Previous cell's output available as '_'
 
-import numpy as np
+const stats = _;
+console.log('✓ Received stats from Python:', stats);
+console.log(\`  Sum:  \${stats.sum}\`);
+console.log(\`  Mean: \${stats.mean.toFixed(2)}\`);
+console.log(\`  Std:  \${stats.std.toFixed(2)}\`);
 
-# Remove outliers using 2-sigma rule
-temps_array = np.array([r['temperature'] for r in temperatureData])
-mean = np.mean(temps_array)
-std = np.std(temps_array)
+console.log('\\n🎉 SUCCESS! Data flowed:');
+console.log('  1️⃣  JavaScript → Array');
+console.log('  2️⃣  Python → NumPy → Dict');
+console.log('  3️⃣  JavaScript → Display');
+console.log('\\n✨ All automatic - no serialization code!');
 
-# Filter data
-clean_data = [
-    reading for reading in temperatureData
-    if abs(reading['temperature'] - mean) <= 2 * std
-]
-
-print(f"✓ Original: {len(temperatureData)} readings")
-print(f"✓ Cleaned:  {len(clean_data)} readings")
-print(f"✓ Removed:  {len(temperatureData) - len(clean_data)} outliers")
-
-# Extract just temperatures for next cell
-clean_temps = [r['temperature'] for r in clean_data]
-
-print(f"\\nClean temperature range: {min(clean_temps):.2f}°C - {max(clean_temps):.2f}°C")
-
-# Export for Rust processing
-clean_temps`);
+display({
+  title: 'Cross-Language Demo Complete!',
+  flow: 'JS → Python → JS',
+  formats: ['Arrow', 'JSON'],
+  stats: stats
+});`);
 
     // Cell 4: Rust - High-performance computation
     notebook.createCell('rust', `// DEMO: temperature_analysis

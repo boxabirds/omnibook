@@ -32,7 +32,7 @@ export interface NotebookConfig {
   title?: string;
 
   /** Available kernel configurations */
-  kernels?: Record<string, KernelClientConfig>;
+  kernels?: Record<string, KernelClientConfig | { kernel: import('../types/index.js').Kernel }>;
 }
 
 /**
@@ -129,7 +129,7 @@ export class Notebook {
   /**
    * Get or create kernel client for a kernel type
    */
-  private async getKernel(kernelType: string): Promise<KernelClient> {
+  private async getKernel(kernelType: string): Promise<KernelClient | import('../types/index.js').Kernel> {
     let entry = this.kernels.get(kernelType);
 
     if (!entry) {
@@ -139,27 +139,51 @@ export class Notebook {
         throw new Error(`No configuration for kernel type: ${kernelType}`);
       }
 
-      // Create kernel client
-      const client = new KernelClient(kernelConfig);
-      await client.init();
+      // Check if a kernel is directly provided (for testing)
+      if ('kernel' in kernelConfig) {
+        const kernel = kernelConfig.kernel;
+        await kernel.init();
 
-      entry = {
-        client,
-        metadata: {
-          type: kernelType,
-          name: kernelType,
-          version: '1.0.0',
-          supportedMimeTypes: ['text/plain', 'text/html', 'application/json'],
-          fileExtensions: [],
-          language: {
+        entry = {
+          client: kernel as any, // Treat kernel as client for direct mode
+          metadata: {
+            type: kernelType,
             name: kernelType,
             version: '1.0.0',
+            supportedMimeTypes: ['text/plain', 'text/html', 'application/json'],
+            fileExtensions: [],
+            language: {
+              name: kernelType,
+              version: '1.0.0',
+            },
           },
-        },
-      };
+        };
 
-      this.kernels.set(kernelType, entry);
-      this.metadata.kernels[kernelType] = '1.0.0';
+        this.kernels.set(kernelType, entry);
+        this.metadata.kernels[kernelType] = '1.0.0';
+      } else {
+        // Create kernel client
+        const client = new KernelClient(kernelConfig as KernelClientConfig);
+        await client.init();
+
+        entry = {
+          client,
+          metadata: {
+            type: kernelType,
+            name: kernelType,
+            version: '1.0.0',
+            supportedMimeTypes: ['text/plain', 'text/html', 'application/json'],
+            fileExtensions: [],
+            language: {
+              name: kernelType,
+              version: '1.0.0',
+            },
+          },
+        };
+
+        this.kernels.set(kernelType, entry);
+        this.metadata.kernels[kernelType] = '1.0.0';
+      }
     }
 
     return entry.client;

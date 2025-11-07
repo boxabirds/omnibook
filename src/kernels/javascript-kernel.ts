@@ -2,6 +2,7 @@
  * JavaScript/TypeScript kernel
  *
  * Executes JavaScript code directly in the worker context
+ * @version 1.1.0 - Fixed template literal escaping in eval mode
  */
 
 import type {
@@ -44,6 +45,13 @@ export class JavaScriptKernel implements Kernel {
   constructor(config: JavaScriptKernelConfig = {}) {
     this.config = config;
     this.setupConsoleCapture();
+  }
+
+  /**
+   * Initialize kernel (no-op for JavaScript)
+   */
+  async init(): Promise<void> {
+    // JavaScript kernel doesn't require initialization
   }
 
   /**
@@ -166,14 +174,44 @@ export class JavaScriptKernel implements Kernel {
       };
 
       // Execute code in context
-      const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
-      const func = new AsyncFunction(
-        ...contextKeys,
-        'display',
-        `"use strict";\n${request.code}`
-      );
+      const contextObj = { ...this.globals, display: displayFunc };
 
-      const result = await func(...contextValues, displayFunc);
+      // Check if code contains explicit return statements
+      const hasExplicitReturn = /\breturn\b/.test(request.code);
+
+      let wrappedCode;
+      if (hasExplicitReturn) {
+        // Code with explicit return - wrap in async function
+        wrappedCode = `
+          with (this) {
+            return (async function() {
+              ${request.code}
+            })();
+          }
+        `;
+      } else {
+        // Jupyter-style - execute and try to capture last expression
+        // Use string escaping instead of template literal to avoid escaping hell
+        const escapedCode = JSON.stringify(request.code);
+        wrappedCode = `
+          with (this) {
+            return (async function() {
+              return eval(${escapedCode});
+            })();
+          }
+        `;
+      }
+
+      const func = new Function(wrappedCode);
+      const result = await func.call(contextObj);
+
+      // Update globals with any new variables defined in this execution
+      // Note: variables defined with const/let in eval don't leak to context,
+      // so we use a different approach - we'll evaluate in the global scope
+      // For now, store result as _ for next cell
+      if (result !== undefined) {
+        this.globals['_'] = result;
+      }
 
       // Collect console output
       const stdout = this.stdoutBuffer.join('');

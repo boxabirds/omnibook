@@ -8,7 +8,7 @@
  * - Raw binary
  */
 
-import { tableToIPC, tableFromIPC, Table, vectorFromArray, type Vector } from 'apache-arrow';
+import { tableToIPC, tableFromIPC, Table, vectorFromArray, tableFromArrays, makeTable, type Vector } from 'apache-arrow';
 import type { Handle, TypeDescriptor } from '../types/index.js';
 import { DataFormat } from '../types/index.js';
 import { getObjectStore } from '../core/object-store.js';
@@ -32,6 +32,10 @@ export class JSONSerializer implements DataSerializer {
 
   canSerialize(value: any): boolean {
     if (value === null || value === undefined) return false;
+    // Exclude binary types
+    if (value instanceof Uint8Array || value instanceof ArrayBuffer || ArrayBuffer.isView(value)) {
+      return false;
+    }
     const type = typeof value;
     return type === 'object' || type === 'number' || type === 'string' || type === 'boolean';
   }
@@ -84,15 +88,29 @@ export class ArrowSerializer implements DataSerializer {
 
     if (value instanceof Table) {
       table = value;
-    } else if (Array.isArray(value)) {
+    } else if (Array.isArray(value) && value.length > 0) {
       // Convert array to Arrow table
-      if (typeof value[0] === 'object') {
-        // Array of records
-        table = Table.from(value);
+      if (typeof value[0] === 'object' && value[0] !== null) {
+        // Array of records - extract columns
+        const firstRow = value[0];
+        const columns: Record<string, any[]> = {};
+
+        // Initialize columns
+        for (const key of Object.keys(firstRow)) {
+          columns[key] = [];
+        }
+
+        // Fill columns
+        for (const row of value) {
+          for (const key of Object.keys(firstRow)) {
+            columns[key].push(row[key]);
+          }
+        }
+
+        table = tableFromArrays(columns);
       } else {
-        // Array of primitives - create single column
-        const vector = vectorFromArray(value);
-        table = Table.new([vector], ['value']);
+        // Array of primitives - create single column table
+        table = tableFromArrays({ value });
       }
     } else {
       throw new Error('Unsupported value type for Arrow serialization');
@@ -263,10 +281,11 @@ export class BinarySerializer implements DataSerializer {
  */
 export class DataInterchange {
   private serializers: DataSerializer[] = [
-    new ArrowSerializer(),
-    new NumPySerializer(),
-    new JSONSerializer(),
-    new BinarySerializer(),
+    // Order matters: most specific first
+    new BinarySerializer(),  // Check for raw bytes first
+    new NumPySerializer(),   // Then ndarray-like objects
+    new ArrowSerializer(),   // Then tabular data
+    new JSONSerializer(),    // Finally JSON for general objects
   ];
 
   /**
