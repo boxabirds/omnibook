@@ -270,6 +270,187 @@ export function NotebookView({ config }: NotebookViewProps) {
     }
   };
 
+  const handleCreateInteropDemo = () => {
+    // Clear existing cells first
+    const existingCells = notebook.getCells();
+    existingCells.forEach(cell => notebook.deleteCell(cell.id));
+
+    // Cell 1: JavaScript - Generate data
+    notebook.createCell('javascript', `// 🎯 Cross-Language Interoperability Demo
+// Cell 1: Generate Data in JavaScript
+
+// Create sample dataset - temperature readings over time
+const temperatureData = Array.from({length: 50}, (_, i) => ({
+  timestamp: Date.now() + i * 1000,
+  temperature: 20 + Math.sin(i / 5) * 3 + Math.random() * 2,
+  location: \`Sensor_\${i % 3}\`
+}));
+
+console.log(\`✓ Generated \${temperatureData.length} temperature readings\`);
+console.log('Sample:', temperatureData.slice(0, 3));
+
+// This data will automatically be available in the next cell!
+// No manual serialization needed - OmniBook handles it.
+temperatureData;`);
+
+    // Cell 2: Python - Analyze data
+    notebook.createCell('python', `# 🐍 Cell 2: Analyze Data in Python
+# The 'temperatureData' variable is automatically available!
+
+import numpy as np
+
+# Access data from JavaScript (automatic deserialization)
+print(f"✓ Received {len(temperatureData)} data points from JavaScript")
+print(f"First item: {temperatureData[0]}")
+
+# Extract temperatures into NumPy array
+temps = np.array([reading['temperature'] for reading in temperatureData])
+
+# Compute statistics
+stats = {
+    'mean': float(np.mean(temps)),
+    'std': float(np.std(temps)),
+    'min': float(np.min(temps)),
+    'max': float(np.max(temps))
+}
+
+print(f"\\nTemperature Statistics:")
+print(f"  Mean: {stats['mean']:.2f}°C")
+print(f"  Std:  {stats['std']:.2f}°C")
+print(f"  Min:  {stats['min']:.2f}°C")
+print(f"  Max:  {stats['max']:.2f}°C")
+
+# Return stats (will be available in next cell)
+stats`);
+
+    // Cell 3: Python - Clean and transform
+    notebook.createCell('python', `# 🔬 Cell 3: Data Cleaning in Python
+
+import numpy as np
+
+# Remove outliers using 2-sigma rule
+temps_array = np.array([r['temperature'] for r in temperatureData])
+mean = np.mean(temps_array)
+std = np.std(temps_array)
+
+# Filter data
+clean_data = [
+    reading for reading in temperatureData
+    if abs(reading['temperature'] - mean) <= 2 * std
+]
+
+print(f"✓ Original: {len(temperatureData)} readings")
+print(f"✓ Cleaned:  {len(clean_data)} readings")
+print(f"✓ Removed:  {len(temperatureData) - len(clean_data)} outliers")
+
+# Extract just temperatures for next cell
+clean_temps = [r['temperature'] for r in clean_data]
+
+print(f"\\nClean temperature range: {min(clean_temps):.2f}°C - {max(clean_temps):.2f}°C")
+
+# Export for Rust processing
+clean_temps`);
+
+    // Cell 4: Rust - High-performance computation
+    notebook.createCell('rust', `// DEMO: temperature_analysis
+// 🦀 Cell 4: High-Performance Computation in Rust
+// The 'clean_temps' array is automatically available!
+//
+// Note: This is simulated. Full Rust would receive:
+// let temps: Vec<f64> = clean_temps;
+//
+// Real Rust code:
+// fn compute_moving_average(data: &[f64], window: usize) -> Vec<f64> {
+//     data.windows(window)
+//         .map(|w| w.iter().sum::<f64>() / window as f64)
+//         .collect()
+// }
+//
+// fn detect_anomalies(data: &[f64], threshold: f64) -> Vec<usize> {
+//     let mean = data.iter().sum::<f64>() / data.len() as f64;
+//     data.iter()
+//         .enumerate()
+//         .filter(|(_, &temp)| (temp - mean).abs() > threshold)
+//         .map(|(i, _)| i)
+//         .collect()
+// }
+//
+// fn main() {
+//     println!("Received {} temperature values", temps.len());
+//
+//     // 5-point moving average for smoothing
+//     let smoothed = compute_moving_average(&temps, 5);
+//     println!("Smoothed to {} points", smoothed.len());
+//
+//     // Find anomalies (> 1.5 std from mean)
+//     let anomalies = detect_anomalies(&temps, 1.5);
+//     println!("Found {} anomalies", anomalies.len());
+//
+//     (smoothed, anomalies)
+// }
+//
+// With zero-copy via SharedArrayBuffer:
+// - No data copying between Python and Rust!
+// - Both languages access the same memory
+// - Instant data transfer`);
+
+    // Cell 5: JavaScript - Visualize results
+    notebook.createCell('javascript', `// 📊 Cell 5: Visualize Results in JavaScript
+// All previous results are automatically available!
+
+console.log('\\n📊 CROSS-LANGUAGE DATA FLOW SUMMARY');
+console.log('═'.repeat(50));
+
+// Data from Cell 1 (JavaScript)
+console.log(\`\\n1️⃣  JavaScript Generated:\`);
+console.log(\`    • \${temperatureData.length} sensor readings\`);
+console.log(\`    • Format: Array of objects\`);
+
+// Data from Cell 2 (Python)
+console.log(\`\\n2️⃣  Python Analyzed:\`);
+console.log(\`    • Mean temperature: \${stats.mean.toFixed(2)}°C\`);
+console.log(\`    • Std deviation: \${stats.std.toFixed(2)}°C\`);
+console.log(\`    • Format: JSON object\`);
+
+// Data from Cell 3 (Python)
+console.log(\`\\n3️⃣  Python Cleaned:\`);
+console.log(\`    • Clean readings: \${clean_temps.length}\`);
+console.log(\`    • Outliers removed: \${temperatureData.length - clean_temps.length}\`);
+console.log(\`    • Format: NumPy array → JS array\`);
+
+// Create simple visualization
+const histogram = {};
+for (const temp of clean_temps) {
+  const bucket = Math.floor(temp);
+  histogram[bucket] = (histogram[bucket] || 0) + 1;
+}
+
+console.log(\`\\n📈 Temperature Distribution:\`);
+Object.entries(histogram)
+  .sort(([a], [b]) => Number(a) - Number(b))
+  .forEach(([temp, count]) => {
+    const bar = '█'.repeat(count);
+    console.log(\`    \${temp}°C: \${bar} (\${count})\`);
+  });
+
+console.log(\`\\n✨ MAGIC: All data transfer was AUTOMATIC!\`);
+console.log(\`   • No manual serialization\`);
+console.log(\`   • No format conversion code\`);
+console.log(\`   • No copying (with SharedArrayBuffer)\`);
+console.log(\`   • Just return values and they flow!\`);
+
+display({
+  title: '🎉 Cross-Language Demo Complete!',
+  dataFlow: 'JS → Python → Python → Rust → JS',
+  formats: ['JSON', 'Arrow', 'NumPy'],
+  totalReadings: temperatureData.length,
+  cleanedReadings: clean_temps.length,
+  stats: stats
+});`);
+
+    setCells([...notebook.getCells()]);
+  };
+
   const kernelOptions = Object.keys(config.kernels || {});
 
   return (
@@ -333,6 +514,20 @@ export function NotebookView({ config }: NotebookViewProps) {
           📚 Load Demos
         </button>
         <button
+          onClick={handleCreateInteropDemo}
+          style={{
+            padding: '0.5rem 1rem',
+            background: '#ec4899',
+            color: '#fff',
+            border: 'none',
+            borderRadius: '4px',
+            cursor: 'pointer',
+            fontWeight: 'bold',
+          }}
+        >
+          🔗 Interop Demo
+        </button>
+        <button
           onClick={handleExecuteAll}
           style={{
             padding: '0.5rem 1rem',
@@ -371,7 +566,12 @@ export function NotebookView({ config }: NotebookViewProps) {
           borderRadius: '8px',
         }}>
           <p style={{ fontSize: '1.1rem', marginBottom: '1rem' }}>No cells yet.</p>
-          <p>Click <strong>"📚 Load Demos"</strong> to see examples, or <strong>"+ Add Cell"</strong> to start from scratch.</p>
+          <p style={{ marginBottom: '0.5rem' }}>
+            Click <strong>"🔗 Interop Demo"</strong> to see cross-language data flow,
+          </p>
+          <p>
+            <strong>"📚 Load Demos"</strong> for language-specific examples, or <strong>"+ Add Cell"</strong> to start from scratch.
+          </p>
         </div>
       ) : (
         cells.map((cell) => (
