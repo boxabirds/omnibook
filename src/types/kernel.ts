@@ -34,6 +34,9 @@ export interface ExecRequest {
   /** Input handles from other cells */
   inputs?: Record<string, Handle>;
 
+  /** Type descriptors for inputs (for deserialization) */
+  inputDescriptors?: Record<string, TypeDescriptor>;
+
   /** Language-specific execution flags/options */
   args?: Record<string, unknown>;
 
@@ -47,6 +50,9 @@ export interface ExecRequest {
 export interface ExecResponse {
   /** Output handles produced by this execution */
   outputs?: Record<string, Handle>;
+
+  /** Type descriptors for outputs (for next cell's deserialization) */
+  outputDescriptors?: Record<string, TypeDescriptor>;
 
   /** Rich display data (text, HTML, images, etc.) */
   display?: MimeBundle[];

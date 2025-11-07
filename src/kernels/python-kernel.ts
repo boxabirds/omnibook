@@ -13,9 +13,11 @@ import type {
   Handle,
   KernelCapabilities,
   MimeBundle,
+  TypeDescriptor,
 } from '../types/index.js';
 
 import { getObjectStore } from '../core/object-store.js';
+import { getDataInterchange } from '../core/data-interchange.js';
 
 /**
  * Pyodide API types (minimal)
@@ -242,15 +244,16 @@ builtins.display = display
     };
 
     try {
-      // Load input handles into Python namespace
-      if (request.inputs) {
-        const store = await getObjectStore();
+      const interchange = getDataInterchange();
+
+      // Load input handles into Python namespace using data interchange
+      if (request.inputs && request.inputDescriptors) {
         for (const [name, handle] of Object.entries(request.inputs)) {
-          const data = await store.get(handle);
-          if (data) {
-            // For now, just expose as bytes
-            // TODO: Parse Arrow/NumPy formats
-            this.pyodide.globals.set(name, data);
+          const descriptor = request.inputDescriptors[name];
+          if (descriptor) {
+            const value = await interchange.deserialize(handle, descriptor);
+            // Convert JS value to Python using Pyodide's toPy
+            this.pyodide.globals.set(name, this.pyodide.toPy(value));
           }
         }
       }
@@ -272,6 +275,10 @@ builtins.display = display
         }
       }
 
+      // Prepare outputs using data interchange
+      const outputs: Record<string, Handle> = {};
+      const outputDescriptors: Record<string, TypeDescriptor> = {};
+
       // Convert result to MIME bundle if not None
       if (result !== undefined && result !== null) {
         // Check if result is a special image dict format
@@ -291,21 +298,11 @@ builtins.display = display
 _display_handler._to_mime_bundle(_last_result)
 `);
           display.push(resultMime.toJs());
-        }
-      }
 
-      // Extract outputs (variables marked for export)
-      const outputs: Record<string, Handle> = {};
-      if (request.args?.outputs && Array.isArray(request.args.outputs)) {
-        const store = await getObjectStore();
-        for (const varName of request.args.outputs as string[]) {
-          if (this.pyodide.globals.has(varName)) {
-            const value = this.pyodide.globals.get(varName);
-            // TODO: Convert to Arrow/NumPy format
-            const bytes = new TextEncoder().encode(JSON.stringify(value));
-            const handle = await store.put(bytes);
-            outputs[varName] = handle;
-          }
+          // Also export the result value automatically
+          const { handle, descriptor } = await interchange.serialize(resultJs);
+          outputs['_'] = handle;
+          outputDescriptors['_'] = descriptor;
         }
       }
 
@@ -331,6 +328,7 @@ _display_handler._to_mime_bundle(_last_result)
 
       return {
         outputs,
+        outputDescriptors,
         display,
         logs: processedLogs,
         metadata: {

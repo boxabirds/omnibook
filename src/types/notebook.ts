@@ -64,8 +64,14 @@ export interface NotebookCell {
   /** Input handles this cell depends on */
   inputs?: Record<string, Handle>;
 
+  /** Input descriptors for deserialization */
+  inputDescriptors?: Record<string, import('./kernel.js').TypeDescriptor>;
+
   /** Output handles this cell produces */
   outputs?: Record<string, Handle>;
+
+  /** Output descriptors for next cells */
+  outputDescriptors?: Record<string, import('./kernel.js').TypeDescriptor>;
 
   /** Cell outputs (display, logs, errors) */
   cellOutputs: CellOutput[];

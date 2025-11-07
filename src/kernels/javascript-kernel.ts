@@ -15,9 +15,11 @@ import type {
   Handle,
   KernelCapabilities,
   MimeBundle,
+  TypeDescriptor,
 } from '../types/index.js';
 
 import { getObjectStore } from '../core/object-store.js';
+import { getDataInterchange } from '../core/data-interchange.js';
 
 /**
  * JavaScript kernel configuration
@@ -141,20 +143,15 @@ export class JavaScriptKernel implements Kernel {
     const logs: string[] = [];
 
     try {
-      // Load input handles
-      if (request.inputs) {
-        const store = await getObjectStore();
+      const interchange = getDataInterchange();
+
+      // Load input handles using data interchange
+      if (request.inputs && request.inputDescriptors) {
         for (const [name, handle] of Object.entries(request.inputs)) {
-          const data = await store.get(handle);
-          if (data) {
-            // Try to parse as JSON
-            try {
-              const text = new TextDecoder().decode(data);
-              this.globals[name] = JSON.parse(text);
-            } catch {
-              // Use raw bytes
-              this.globals[name] = data;
-            }
+          const descriptor = request.inputDescriptors[name];
+          if (descriptor) {
+            const value = await interchange.deserialize(handle, descriptor);
+            this.globals[name] = value;
           }
         }
       }
@@ -178,14 +175,6 @@ export class JavaScriptKernel implements Kernel {
 
       const result = await func(...contextValues, displayFunc);
 
-      // Update globals with modified values
-      // Note: This is a limitation - we can't easily track which values changed
-      // For now, just store the result if it exists
-      if (result !== undefined) {
-        this.globals['_'] = result;
-        display.push(this.toMimeBundle(result));
-      }
-
       // Collect console output
       const stdout = this.stdoutBuffer.join('');
       const stderr = this.stderrBuffer.join('');
@@ -194,25 +183,26 @@ export class JavaScriptKernel implements Kernel {
         logs.push(stdout);
       }
 
-      // Extract outputs
+      // Prepare outputs using data interchange
       const outputs: Record<string, Handle> = {};
-      if (request.args?.outputs && Array.isArray(request.args.outputs)) {
-        const store = await getObjectStore();
-        for (const varName of request.args.outputs as string[]) {
-          if (varName in this.globals) {
-            const value = this.globals[varName];
-            const json = JSON.stringify(value);
-            const bytes = new TextEncoder().encode(json);
-            const handle = await store.put(bytes);
-            outputs[varName] = handle;
-          }
-        }
+      const outputDescriptors: Record<string, TypeDescriptor> = {};
+
+      // If there's a result, export it automatically
+      if (result !== undefined) {
+        this.globals['_'] = result;
+        display.push(this.toMimeBundle(result));
+
+        // Automatically serialize and export the result
+        const { handle, descriptor } = await interchange.serialize(result);
+        outputs['_'] = handle;
+        outputDescriptors['_'] = descriptor;
       }
 
       this.executionCount++;
 
       return {
         outputs,
+        outputDescriptors,
         display,
         logs,
         metadata: {

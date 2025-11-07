@@ -196,10 +196,39 @@ export class Notebook {
         cell.cellOutputs.push(output);
       };
 
+      // Auto-populate inputs from all previous cells (Jupyter-like behavior)
+      // This makes variables from previous cells automatically available
+      const inputs: Record<string, Handle> = {};
+      const inputDescriptors: Record<string, import('../types/kernel.js').TypeDescriptor> = {};
+
+      const cellOrder = Array.from(this.cells.keys());
+      const currentIndex = cellOrder.indexOf(cellId);
+
+      for (let i = 0; i < currentIndex; i++) {
+        const prevCellId = cellOrder[i];
+        const prevCell = this.cells.get(prevCellId);
+
+        if (prevCell?.outputs && prevCell?.outputDescriptors) {
+          // Make all outputs from previous cells available
+          for (const [varName, handle] of Object.entries(prevCell.outputs)) {
+            const descriptor = prevCell.outputDescriptors[varName];
+            if (descriptor) {
+              inputs[varName] = handle;
+              inputDescriptors[varName] = descriptor;
+            }
+          }
+        }
+      }
+
+      // Store the computed inputs on the cell
+      cell.inputs = Object.keys(inputs).length > 0 ? inputs : undefined;
+      cell.inputDescriptors = Object.keys(inputDescriptors).length > 0 ? inputDescriptors : undefined;
+
       // Prepare execution request
       const request: ExecRequest = {
         code: cell.code,
-        inputs: cell.inputs,
+        inputs: Object.keys(inputs).length > 0 ? inputs : undefined,
+        inputDescriptors: Object.keys(inputDescriptors).length > 0 ? inputDescriptors : undefined,
         cellId,
       };
 
@@ -209,6 +238,7 @@ export class Notebook {
       // Update cell with results
       if (response.outputs) {
         cell.outputs = response.outputs;
+        cell.outputDescriptors = response.outputDescriptors;
         this.dag.setOutputs(cellId, response.outputs);
       }
 
