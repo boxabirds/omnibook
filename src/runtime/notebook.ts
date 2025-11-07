@@ -5,15 +5,15 @@
 import { CellDAG } from '../core/cell-dag.js';
 import { getObjectStore } from '../core/object-store.js';
 import { KernelClient, type KernelClientConfig } from './kernel-client.js';
-import type {
-  CellId,
-  Handle,
-  NotebookDocument,
-  NotebookCell,
+import {
   CellState,
-  CellOutput,
-  ExecRequest,
-  KernelMetadata,
+  type CellId,
+  type Handle,
+  type NotebookDocument,
+  type NotebookCell,
+  type CellOutput,
+  type ExecRequest,
+  type KernelMetadata,
 } from '../types/index.js';
 
 /**
@@ -44,6 +44,7 @@ export class Notebook {
   private kernels = new Map<string, KernelEntry>();
   private executionQueue: CellId[] = [];
   private executing = false;
+  private outputCounter = 0;
 
   private config: NotebookConfig;
   private metadata: NotebookDocument['metadata'];
@@ -119,6 +120,13 @@ export class Notebook {
   }
 
   /**
+   * Generate unique output ID
+   */
+  private generateOutputId(): string {
+    return `output-${Date.now()}-${++this.outputCounter}`;
+  }
+
+  /**
    * Get or create kernel client for a kernel type
    */
   private async getKernel(kernelType: string): Promise<KernelClient> {
@@ -179,7 +187,7 @@ export class Notebook {
       // Set up stream output handler
       kernel.onStreamOutput = (stream, text) => {
         const output: CellOutput = {
-          id: `output-${Date.now()}`,
+          id: this.generateOutputId(),
           type: 'stream',
           name: stream,
           text,
@@ -208,7 +216,7 @@ export class Notebook {
       if (response.display) {
         for (const mimeBundle of response.display) {
           const output: CellOutput = {
-            id: `output-${Date.now()}`,
+            id: this.generateOutputId(),
             type: 'display',
             data: mimeBundle,
             timestamp: Date.now(),
@@ -221,7 +229,7 @@ export class Notebook {
       if (response.logs) {
         for (const log of response.logs) {
           const output: CellOutput = {
-            id: `output-${Date.now()}`,
+            id: this.generateOutputId(),
             type: 'stream',
             name: 'stdout',
             text: log,
@@ -234,7 +242,7 @@ export class Notebook {
       // Handle errors
       if (response.error) {
         const output: CellOutput = {
-          id: `output-${Date.now()}`,
+          id: this.generateOutputId(),
           type: 'error',
           error: response.error,
           timestamp: Date.now(),
@@ -255,7 +263,7 @@ export class Notebook {
     } catch (error: any) {
       // Execution error
       const output: CellOutput = {
-        id: `output-${Date.now()}`,
+        id: this.generateOutputId(),
         type: 'error',
         error: {
           name: error.name || 'Error',

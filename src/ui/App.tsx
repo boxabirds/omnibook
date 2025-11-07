@@ -14,6 +14,10 @@ function App() {
         workerUrl: new URL('../kernels/python-kernel.worker.ts', import.meta.url).href,
         kernelType: 'python',
       },
+      rust: {
+        workerUrl: new URL('../kernels/rust-kernel.worker.ts', import.meta.url).href,
+        kernelType: 'rust',
+      },
     },
   };
 

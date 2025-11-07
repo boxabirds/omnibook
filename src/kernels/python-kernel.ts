@@ -93,7 +93,7 @@ export class PythonKernel implements Kernel {
     });
 
     // Load common packages
-    const packages = this.config.packages || ['numpy', 'micropip'];
+    const packages = this.config.packages || ['numpy', 'matplotlib', 'micropip'];
     if (packages.length > 0) {
       await this.pyodide.loadPackage(packages);
     }
@@ -113,7 +113,15 @@ export class PythonKernel implements Kernel {
     await this.pyodide.runPythonAsync(`
 import sys
 import json
+import builtins
 from io import StringIO
+
+# Configure matplotlib to use non-interactive backend (works in Web Workers)
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Non-interactive backend
+except ImportError:
+    pass  # matplotlib not installed yet
 
 # Display buffer for rich outputs
 _display_buffer = []
@@ -168,14 +176,20 @@ class DisplayHandler:
         # Check for matplotlib figures
         try:
             import matplotlib.pyplot as plt
-            if hasattr(obj, 'savefig'):  # matplotlib figure
+            import matplotlib.figure
+            # Check if it's a matplotlib Figure object
+            if isinstance(obj, matplotlib.figure.Figure) or hasattr(obj, 'savefig'):
                 import base64
                 from io import BytesIO
                 buf = BytesIO()
-                obj.savefig(buf, format='png', bbox_inches='tight')
+                obj.savefig(buf, format='png', bbox_inches='tight', dpi=100)
                 buf.seek(0)
                 bundle['image/png'] = base64.b64encode(buf.read()).decode('ascii')
-        except:
+                # Remove text/plain for cleaner display
+                if 'image/png' in bundle:
+                    bundle['text/plain'] = '<Figure>'
+        except Exception as e:
+            # Keep the error silent but preserve other mime types
             pass
 
         return bundle
@@ -196,8 +210,8 @@ def get_displays():
     _display_handler.clear()
     return outputs
 
-# Make display available globally
-__builtins__['display'] = display
+# Make display available globally using builtins module
+builtins.display = display
 `);
   }
 
@@ -216,6 +230,16 @@ __builtins__['display'] = display
     const startTime = Date.now();
     const logs: string[] = [];
     const display: MimeBundle[] = [];
+
+    // Capture stdout/stderr during execution
+    const capturedOutput: string[] = [];
+    const originalStdout = this.config.onStreamOutput;
+    this.config.onStreamOutput = (stream, text) => {
+      capturedOutput.push(text);
+      if (originalStdout) {
+        originalStdout(stream, text);
+      }
+    };
 
     try {
       // Load input handles into Python namespace
@@ -250,10 +274,24 @@ __builtins__['display'] = display
 
       // Convert result to MIME bundle if not None
       if (result !== undefined && result !== null) {
-        const resultMime = await this.pyodide.runPythonAsync(`
-_display_handler._to_mime_bundle(${JSON.stringify(result)})
+        // Check if result is a special image dict format
+        const resultJs = result.toJs ? result.toJs() : result;
+
+        if (resultJs && typeof resultJs === 'object' && resultJs._mime_type && resultJs._base64) {
+          // Special format: convert directly to MIME bundle
+          const mimeType = resultJs._mime_type;
+          display.push({
+            [mimeType]: resultJs._base64,
+            'text/plain': `<${mimeType} image>`,
+          });
+        } else {
+          // Store result in globals temporarily
+          this.pyodide.globals.set('_last_result', result);
+          const resultMime = await this.pyodide.runPythonAsync(`
+_display_handler._to_mime_bundle(_last_result)
 `);
-        display.push(resultMime.toJs());
+          display.push(resultMime.toJs());
+        }
       }
 
       // Extract outputs (variables marked for export)
@@ -271,17 +309,38 @@ _display_handler._to_mime_bundle(${JSON.stringify(result)})
         }
       }
 
+      // Check captured output for special IMAGE_DATA: prefix
+      const processedLogs: string[] = [];
+      for (const output of capturedOutput) {
+        if (output.startsWith('IMAGE_DATA:')) {
+          // Extract base64 image data
+          const imageData = output.substring('IMAGE_DATA:'.length).trim();
+          display.push({
+            'image/png': imageData,
+            'text/plain': '<matplotlib plot>',
+          });
+        } else {
+          processedLogs.push(output);
+        }
+      }
+
       this.executionCount++;
+
+      // Restore original callback
+      this.config.onStreamOutput = originalStdout;
 
       return {
         outputs,
         display,
-        logs,
+        logs: processedLogs,
         metadata: {
           executionTime: Date.now() - startTime,
         },
       };
     } catch (error: any) {
+      // Restore original callback on error
+      this.config.onStreamOutput = originalStdout;
+
       return {
         display,
         logs,
